@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRYPTO LIVE TRACKER</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles for the Inter font and loading animation */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* Equivalent to bg-gray-900 */
+            color: #e2e8f0; /* Equivalent to text-gray-100 */
+        }
+        .animate-pulse-slow {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: .5;
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4">
+
+    <header class="text-center mb-10">
+        <h1 class="text-5xl font-extrabold text-blue-400 mb-4 tracking-tight">
+            CRYPTO LIVE TRACKER
+        </h1>
+        <p class="text-xl text-gray-300">
+            The best and worst performing cryptocurrencies in the market.
+        </p>
+    </header>
+
+    <div id="error-message" class="bg-red-700 text-white p-4 rounded-lg text-center mb-6 hidden">
+        <!-- Error message will be injected here -->
+    </div>
+
+    <div id="loading-indicator" class="flex justify-center items-center h-64">
+        <div class="text-blue-400 text-2xl animate-pulse-slow">Loading data...</div>
+    </div>
+
+    <main id="main-content" class="space-y-12 hidden">
+        <!-- Top Gainers Section -->
+        <section class="bg-gray-800 p-6 rounded-xl shadow-lg border-t-4 border-green-500">
+            <h2 class="text-3xl font-bold text-white mb-6 text-center">📈 Top 6 Crypto Gainers Today</h2>
+            <div id="top-gainers-container" class="flex flex-wrap justify-center -m-2">
+                <!-- Crypto cards will be injected here -->
+            </div>
+        </section>
+
+        <!-- Top Losers Section -->
+        <section class="bg-gray-800 p-6 rounded-xl shadow-lg border-t-4 border-red-500">
+            <h2 class="text-3xl font-bold text-white mb-6 text-center">📉 Top 6 Crypto Losers Today</h2>
+            <div id="top-losers-container" class="flex flex-wrap justify-center -m-2">
+                <!-- Crypto cards will be injected here -->
+            </div>
+        </section>
+
+        <!-- Top Weekly Performers Section -->
+        <section class="bg-gray-800 p-6 rounded-xl shadow-lg border-t-4 border-purple-500">
+            <h2 class="text-3xl font-bold text-white mb-6 text-center">📊 Top 8 Crypto Weekly Performers</h2>
+            <div id="weekly-performers-container" class="flex flex-wrap justify-center -m-2">
+                <!-- Crypto cards will be injected here -->
+            </div>
+        </section>
+    </main>
+
+    <footer class="text-center mt-12 text-gray-500 text-sm">
+        <p>Data provided by CoinGecko. Updates every 30 seconds.</p>
+        <p>Prices updated: <span id="last-updated"></span></p>
+    </footer>
+
+    <script>
+        // DOM elements
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const errorMessage = document.getElementById('error-message');
+        const mainContent = document.getElementById('main-content');
+        const topGainersContainer = document.getElementById('top-gainers-container');
+        const topLosersContainer = document.getElementById('top-losers-container');
+        const weeklyPerformersContainer = document.getElementById('weekly-performers-container');
+        const lastUpdatedSpan = document.getElementById('last-updated');
+
+        /**
+         * Creates an HTML string for a single cryptocurrency card.
+         * @param {object} crypto - The cryptocurrency data object.
+         * @returns {string} - The HTML string for the crypto card.
+         */
+        const createCryptoCardHtml = (crypto) => {
+            const displayChangePercent = typeof crypto.changePercent === 'number'
+                ? crypto.changePercent.toFixed(2)
+                : 'N/A';
+
+            const isGainer = parseFloat(displayChangePercent) > 0;
+            const changeColor = isGainer ? 'text-green-400' : 'text-red-400';
+            const arrow = isGainer ? '↑' : '↓';
+
+            const formattedPrice = parseFloat(crypto.price).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 8
+            });
+
+            return `
+                <div class="bg-gray-800 p-4 m-2 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 w-full sm:w-1/2 md:w-1/3 lg:w-1/4 xl:w-1/5 min-w-[200px] flex-grow border border-gray-700">
+                    <div class="flex items-center mb-2">
+                        <img src="${crypto.image}" alt="${crypto.name} logo" class="w-8 h-8 rounded-full mr-2" onerror="this.onerror=null;this.src='https://placehold.co/32x32/1f2937/d1d5db?text=N/A';">
+                        <h3 class="text-xl font-semibold text-white">${crypto.name} (${crypto.symbol})</h3>
+                    </div>
+                    <p class="text-2xl font-bold text-blue-300 mb-2">$${formattedPrice}</p>
+                    <p class="text-lg font-medium ${changeColor}">
+                        ${arrow} ${displayChangePercent}%
+                    </p>
+                </div>
+            `;
+        };
+
+        /**
+         * Fetches real cryptocurrency data from CoinGecko API and updates the DOM.
+         */
+        const fetchData = async () => {
+            loadingIndicator.classList.remove('hidden');
+            mainContent.classList.add('hidden');
+            errorMessage.classList.add('hidden');
+            errorMessage.textContent = ''; // Clear previous error
+
+            try {
+                const response = await fetch(
+                    'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false&price_change_percentage=24h,7d'
+                );
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // Clear previous content
+                topGainersContainer.innerHTML = '';
+                topLosersContainer.innerHTML = '';
+                weeklyPerformersContainer.innerHTML = '';
+
+                // Filter and sort for Top Gainers (24h)
+                const topGainers = data
+                    .filter(crypto => crypto.price_change_percentage_24h > 0)
+                    .sort((a, b) => b.price_change_percentage_24h - a.price_change_percentage_24h)
+                    .slice(0, 6)
+                    .map(crypto => ({
+                        name: crypto.name,
+                        symbol: crypto.symbol.toUpperCase(),
+                        price: crypto.current_price,
+                        changePercent: crypto.price_change_percentage_24h,
+                        image: crypto.image, // Added image property
+                    }));
+                
+                if (topGainers.length > 0) {
+                    topGainers.forEach(crypto => {
+                        topGainersContainer.innerHTML += createCryptoCardHtml(crypto);
+                    });
+                } else {
+                    topGainersContainer.innerHTML = '<p class="text-gray-400">No gainers found.</p>';
+                }
+
+
+                // Filter and sort for Top Losers (24h)
+                const topLosers = data
+                    .filter(crypto => crypto.price_change_percentage_24h < 0)
+                    .sort((a, b) => a.price_change_percentage_24h - b.price_change_percentage_24h)
+                    .slice(0, 6)
+                    .map(crypto => ({
+                        name: crypto.name,
+                        symbol: crypto.symbol.toUpperCase(),
+                        price: crypto.current_price,
+                        changePercent: crypto.price_change_percentage_24h,
+                        image: crypto.image, // Added image property
+                    }));
+
+                if (topLosers.length > 0) {
+                    topLosers.forEach(crypto => {
+                        topLosersContainer.innerHTML += createCryptoCardHtml(crypto);
+                    });
+                } else {
+                    topLosersContainer.innerHTML = '<p class="text-gray-400">No losers found.</p>';
+                }
+
+                // Filter and sort for Top 8 Weekly Performers (7d)
+                const weeklyPerformers = data
+                    .filter(crypto => crypto.price_change_percentage_7d_in_currency > 0)
+                    .sort((a, b) => b.price_change_percentage_7d_in_currency - a.price_change_percentage_7d_in_currency)
+                    .slice(0, 8)
+                    .map(crypto => ({
+                        name: crypto.name,
+                        symbol: crypto.symbol.toUpperCase(),
+                        price: crypto.current_price,
+                        changePercent: crypto.price_change_percentage_7d_in_currency,
+                        image: crypto.image, // Added image property
+                    }));
+                
+                if (weeklyPerformers.length > 0) {
+                    weeklyPerformers.forEach(crypto => {
+                        weeklyPerformersContainer.innerHTML += createCryptoCardHtml(crypto);
+                    });
+                } else {
+                    weeklyPerformersContainer.innerHTML = '<p class="text-gray-400">No weekly performers found.</p>';
+                }
+
+                lastUpdatedSpan.textContent = new Date().toLocaleTimeString('en-US');
+                
+            } catch (err) {
+                console.error("Error fetching data:", err);
+                errorMessage.textContent = "Failed to load cryptocurrency data. Please try again later.";
+                errorMessage.classList.remove('hidden');
+            } finally {
+                loadingIndicator.classList.add('hidden');
+                mainContent.classList.remove('hidden');
+            }
+        };
+
+        // Initial fetch on window load
+        window.onload = function() {
+            fetchData();
+            // Set up interval for real-time updates (e.g., every 30 seconds)
+            setInterval(fetchData, 30000); // 30 seconds
+        };
+    </script>
+</body>
+</html>
